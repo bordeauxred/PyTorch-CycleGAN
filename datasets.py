@@ -36,13 +36,17 @@ class CelebA(Dataset):
         Arched_Eyebrows
         Attractive
         Bags_Under_Eyes
-        Bald Bangs Big_Lips
-        Big_Nose Black_Hair
+        Bald Bangs
+        Big_Lips
+        Big_Nose
+        Black_Hair
         Blond_Hair
         Blurry Brown_Hair
         Bushy_Eyebrows Chubby
-        Double_Chin Eyeglasses
-        Goatee Gray_Hair
+        Double_Chin
+        Eyeglasses
+        Goatee
+        Gray_Hair
         Heavy_Makeup
         High_Cheekbones
         Male
@@ -65,7 +69,7 @@ class CelebA(Dataset):
         Young
     """
 
-    def __init__(self, root, transforms_=None, unaligned=False, attribute = "Blond_Hair"):
+    def __init__(self, root, transforms_=None, unaligned=False, attribute = "Eyeglasses"):
         self.transform = transforms.Compose(transforms_)
         self.unaligned = unaligned
         #self.files = sorted(glob.glob(os.path.join(root, 'img_align_celeba') + '/*.*'))
