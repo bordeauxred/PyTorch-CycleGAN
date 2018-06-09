@@ -4,22 +4,24 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from time import time
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_output):
+    def __init__(self, n_channels, n_output, nf = 64):
         super(UNet, self).__init__()
-        self.inc = inconv(n_channels, 32)
-        self.down1 = down(32, 64)
-        self.down2 = down(64, 128)
-        self.down3 = down(128, 256)
-        self.down4 = down(256, 256)
-        self.up1 = up(512, 128)
-        self.up2 = up(256, 64)
-        self.up3 = up(128, 32)
-        self.up4 = up(64, 32)
-        self.outc = outconv(32, n_output)
+        self.inc = inconv(n_channels, nf)
+        self.down1 = down(nf, nf*2)
+        self.down2 = down(nf*2, nf*4)
+        self.down3 = down(nf*4, nf*8)
+        self.down4 = down(nf*8, nf*8)
+        self.up1 = up(nf*16, nf*4)
+        self.up2 = up(nf*8, nf*2)
+        self.up3 = up(nf*4, nf)
+        self.up4 = up(nf*2, nf)
+        self.outc = outconv(nf, n_output)
 
     def forward(self, x):
+        tic = time()
         x1 = self.inc(x) # 32
         x2 = self.down1(x1) # 64
         x3 = self.down2(x2) # 128
@@ -32,21 +34,98 @@ class UNet(nn.Module):
         x = self.outc(x)
         return x
 
+class UNetDiscriminator(nn.Module):
+    def __init__(self, n_channels, n_output, nf = 64):
+        super(UNet, self).__init__()
+        self.inc = inconv(n_channels, nf)
+        self.down1 = down(nf, nf*2)
+        self.down2 = down(nf*2, nf*4)
+        self.down3 = down(nf*4, nf*8)
+        self.down4 = down(nf*8, nf*8)
+
+        self.out1 = outconv(nf*4, n_output)
+        self.out2 = outconv(nf*2, n_output)
+        self.out3 = outconv(nf, n_output)
+        self.out4 = outconv(nf, n_output)
+        self.outc = outconv(nf, n_output)
+
+    def forward(self, x):
+        tic = time()
+        x1 = self.inc(x) # 32
+        x2 = self.down1(x1) # 64
+        x3 = self.down2(x2) # 128
+        x4 = self.down3(x3) # 256
+        x5 = self.down4(x4) # 256
+        x = self.up1(x5, x4) #128
+        x = self.up2(x, x3) # 128
+        x = self.up3(x, x2) # 64
+        x = self.up4(x, x1) # 32
+        x = self.outc(x)
+        return x
+
+class PyramidUNet(nn.Module):
+    def __init__(self, n_channels, n_output, nf = 32):
+        super(PyramidUNet, self).__init__()
+        self.inc = inconv(n_channels, nf)
+        self.down1 = down(nf, nf*2)
+        self.down2 = down(nf*2, nf*4)
+        self.down3 = down(nf*4, nf*8)
+        self.down4 = down(nf*8, nf*8)
+        self.up1 = up(nf*16, nf*4)
+        self.up2 = up(nf*8, nf*2)
+        self.up3 = up(nf*4, nf)
+        self.up4 = up(nf*2, nf)
+
+        self.out1 = outconv(nf*4, n_output)
+        self.out2 = outconv(nf*2, n_output)
+        self.out3 = outconv(nf, n_output)
+        self.out4 = outconv(nf, n_output)
+
+    def forward(self, x):
+        tic = time()
+        x1 = self.inc(x) # 32
+        x2 = self.down1(x1) # 64
+        x3 = self.down2(x2) # 128
+        x4 = self.down3(x3) # 256
+        x5 = self.down4(x4) # 256
+
+        x = self.up1(x5, x4) #128
+        o1 = self.out1(x)
+
+        x = self.up2(x, x3) # 128
+        o2 = self.out2(x)
+
+        x = self.up3(x, x2) # 64
+        o3 = self.out3(x)
+
+        x = self.up4(x, x1) # 32
+        o4 = self.out4(x)
+
+        return [o4, o3, o2, o1]
+
 class double_conv(nn.Module):
     '''(conv => BN => ReLU) * 2'''
     def __init__(self, in_ch, out_ch):
         super(double_conv, self).__init__()
+
+        self.skip_path = nn.Conv2d(in_ch, out_ch, 1, padding=0, bias=False)
+
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
+            nn.Conv2d(in_ch, out_ch//4, 1, padding=0, bias=False), #squeeze
+
+            nn.Conv2d(out_ch//4, out_ch//4, 3, padding=1),
+            nn.BatchNorm2d(out_ch//4),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.Conv2d(out_ch//4, out_ch//4, 3, padding=1, bias=False),
+            nn.BatchNorm2d(out_ch//4),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch//4, out_ch, 1, padding=0, bias=False) #expand
         )
 
     def forward(self, x):
+        residual = x
         x = self.conv(x)
+        x += self.skip_path(residual)
         return x
 
 
@@ -94,7 +173,7 @@ class up(nn.Module):
 class outconv(nn.Module):
     def __init__(self, in_ch, out_ch):
         super(outconv, self).__init__()
-        self.conv = nn.Conv2d(in_ch, out_ch, 1)
+        self.conv = nn.Conv2d(in_ch, out_ch, 1, bias=False)
 
 
     def forward(self, x):

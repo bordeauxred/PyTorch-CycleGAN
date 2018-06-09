@@ -7,6 +7,39 @@ from torch.autograd import Variable
 import torch
 from visdom import Visdom
 import numpy as np
+import cv2
+from PIL import Image
+
+class GuidedFilter(object):
+    def __init__(self, r=5, eps=0.05, p = None):
+        self.r = r
+        self.p = p
+        self.eps = eps
+
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL Image): Image to be cropped.
+
+        Returns:
+            PIL Image: Filtered image.
+        """
+        img_arr = np.array(img)
+        img_arr = img_arr.astype(np.float32)/255
+        if self.p == None:
+            p = img_arr.copy()
+        else:
+            p = self.p
+
+        img_arr_filt = cv2.ximgproc.guidedFilter(img_arr, p, self.r, self.eps)
+        img_arr_filt = (img_arr_filt*255).astype(np.uint8)
+        return Image.fromarray(img_arr_filt)
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(size={0})'.format(self.size)
+
+
+
 
 def tensor2image(tensor):
     image = 127.5*(tensor[0].cpu().float().numpy() + 1.0)
@@ -46,7 +79,7 @@ class Logger():
                 sys.stdout.write('%s: %.4f | ' % (loss_name, self.losses[loss_name]/self.batch))
 
         batches_done = self.batches_epoch*(self.epoch - 1) + self.batch
-        batches_left = self.batches_epoch*(self.n_epochs - self.epoch) + self.batches_epoch - self.batch 
+        batches_left = self.batches_epoch*(self.n_epochs - self.epoch) + self.batches_epoch - self.batch
         sys.stdout.write('ETA: %s' % (datetime.timedelta(seconds=batches_left*self.mean_period/batches_done)))
 
         # Draw images
@@ -61,7 +94,7 @@ class Logger():
             # Plot losses
             for loss_name, loss in self.losses.items():
                 if loss_name not in self.loss_windows:
-                    self.loss_windows[loss_name] = self.viz.line(X=np.array([self.epoch]), Y=np.array([loss/self.batch]), 
+                    self.loss_windows[loss_name] = self.viz.line(X=np.array([self.epoch]), Y=np.array([loss/self.batch]),
                                                                     opts={'xlabel': 'epochs', 'ylabel': loss_name, 'title': loss_name})
                 else:
                     self.viz.line(X=np.array([self.epoch]), Y=np.array([loss/self.batch]), win=self.loss_windows[loss_name], update='append')
@@ -74,7 +107,7 @@ class Logger():
         else:
             self.batch += 1
 
-        
+
 
 class ReplayBuffer():
     def __init__(self, max_size=50):
@@ -115,4 +148,3 @@ def weights_init_normal(m):
     elif classname.find('BatchNorm2d') != -1:
         torch.nn.init.normal(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant(m.bias.data, 0.0)
-

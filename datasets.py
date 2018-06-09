@@ -28,6 +28,33 @@ class ImageDataset(Dataset):
     def __len__(self):
         return max(len(self.files_A), len(self.files_B))
 
+class InverseTransformImageDataset(Dataset):
+
+     """
+         image = input_image -> pre_transform -> post_transform
+         target = input_image -> pre_transform -> target_transforms -> post_transform
+     """
+
+    def __init__(self, root, pre_transforms=None, target_transforms=None, post_transform=None, mode='train'):
+        self.pre_transform = transforms.Compose(transforms)
+        self.target_transform = transforms.Compose(transforms)
+        self.post_transform = transforms.Compose(transforms)
+        self.unaligned = unaligned
+
+        self.files = sorted(glob.glob(os.path.join(root, '%s' % mode) + '/*.*'))
+
+    def __getitem__(self, index):
+        image = self.pre_transform(Image.open(self.files[index % len(self.files)]))
+        target = self.target_transform(image)
+
+        image = self.post_transform(image)
+        target = self.post_transform(target)
+
+        return {'A': image, 'B': target}
+
+    def __len__(self):
+        return max(len(self.files_A), len(self.files_B))
+
 class CelebA(Dataset):
     """"
 
