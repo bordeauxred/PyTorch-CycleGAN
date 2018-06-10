@@ -6,6 +6,8 @@ import csv
 from torch.utils.data import Dataset
 from PIL import Image
 import torchvision.transforms as transforms
+from utils import GuidedFilter
+
 
 class ImageDataset(Dataset):
     def __init__(self, root, transforms_=None, unaligned=False, mode='train'):
@@ -30,30 +32,27 @@ class ImageDataset(Dataset):
 
 class InverseTransformImageDataset(Dataset):
 
-     """
-         image = input_image -> pre_transform -> post_transform
-         target = input_image -> pre_transform -> target_transforms -> post_transform
-     """
+    def __init__(self, root, transforms_=None, target_transforms_=None):
+        self.transform = transforms.Compose(transforms_)
+        self.target_transform = transforms.Compose(target_transforms_)
 
-    def __init__(self, root, pre_transforms=None, target_transforms=None, post_transform=None, mode='train'):
-        self.pre_transform = transforms.Compose(transforms)
-        self.target_transform = transforms.Compose(transforms)
-        self.post_transform = transforms.Compose(transforms)
-        self.unaligned = unaligned
+        self.files = sorted(os.listdir(root))
 
-        self.files = sorted(glob.glob(os.path.join(root, '%s' % mode) + '/*.*'))
+        self.files = [os.path.join(root,x) for x in self.files if x.split(".")[-1] in ["jpg","png"]]
+        if len(self.files) <= 0:
+            raise ValueError("No images found in {}".format(root))
+
 
     def __getitem__(self, index):
-        image = self.pre_transform(Image.open(self.files[index % len(self.files)]))
-        target = self.target_transform(image)
+        im = Image.open(self.files[index % len(self.files)])
+        image = self.transform(im)
+        target = self.target_transform(im)
 
-        image = self.post_transform(image)
-        target = self.post_transform(target)
 
-        return {'A': image, 'B': target}
+        return {'image': image, 'target': target}
 
     def __len__(self):
-        return max(len(self.files_A), len(self.files_B))
+        return len(self.files)
 
 class CelebA(Dataset):
     """"
@@ -99,7 +98,7 @@ class CelebA(Dataset):
     def __init__(self, root, transforms_=None, unaligned=False, attribute = "Eyeglasses"):
         self.transform = transforms.Compose(transforms_)
         self.unaligned = unaligned
-        #self.files = sorted(glob.glob(os.path.join(root, 'img_align_celeba') + '/*.*'))
+        #self.files =         import pdb; pdb.set_trace()sorted(glob.glob(os.path.join(root, 'img_align_celeba') + '/*.*'))
         attribute_file = os.path.join(root, 'list_attr_celeba.txt')
         image_path = os.path.join(root, 'img_align_celeba')
 
@@ -138,4 +137,18 @@ class CelebA(Dataset):
         return max(len(self.files_A), len(self.files_B))
 
 if __name__ == "__main__":
-    dataset = CelebA("/home/msu/Data/celeba", unaligned=True, attribute = "male")
+    current_scale = 128
+    transforms_ = [
+                    transforms.Resize(int(current_scale), Image.BICUBIC),
+                    GuidedFilter(),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
+
+    target_transforms_ = [
+                    transforms.Resize(int(current_scale), Image.BICUBIC),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
+
+    #dataset = CelebA("/home/msu/Data/celeba", unaligned=True, attribute = "male")
+    dataset = InverseTransformImageDataset("datasets/rome/train/B", transforms_=transforms_, target_transforms_=target_transforms_)
+    print(dataset[0])
