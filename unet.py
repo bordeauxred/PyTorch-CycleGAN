@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from time import time
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_output, nf = 64):
+    def __init__(self, n_channels, n_output, nf = 128):
         super(UNet, self).__init__()
         self.inc = inconv(n_channels, nf)
         self.down1 = down(nf, nf*2)

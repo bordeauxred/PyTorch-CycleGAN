@@ -2,19 +2,23 @@
 
 import argparse
 import itertools
-
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from PIL import Image
 import torch
+import cv2
+import numpy as np
+from utils import tensor2image
+from matplotlib import pyplot as plt
 
 #from models import Generator
 from unet import UNet as Generator
+#from linknet import LinkNet as Generator
 from models import Discriminator
-from utils import ReplayBuffer
 from utils import LambdaLR
-from utils import Logger
+from utils import Logger, ReplayBuffer, GuidedFilter
 from utils import weights_init_normal
 from datasets import ImageDataset, CelebA
 from time import time
@@ -66,7 +70,7 @@ criterion_GAN = torch.nn.MSELoss()
 criterion_cycle = torch.nn.L1Loss()
 criterion_identity = torch.nn.L1Loss()
 
-# Optimizers & LR schedulers
+
 
 
 
@@ -79,6 +83,12 @@ Tensor = torch.cuda.FloatTensor if opt.cuda else torch.Tensor
 
 
 
+def make_pyramid(x, num_levels=4):
+    xlist = []
+    for i in range(num_levels):
+        xlist.append(x)
+        x = F.avg_pool2d(x, 2)
+    return xlist
 
 
 
@@ -89,8 +99,8 @@ Tensor = torch.cuda.FloatTensor if opt.cuda else torch.Tensor
 # epoch, size, batch_size
 
 current_scale = 32
-max_scale = 128
-max_scale_batch_size = 8
+max_scale = 256
+max_scale_batch_size = 4
 epochs_per_scale = 2
 
 iterations_per_epoch = 100
@@ -98,7 +108,7 @@ iterations_per_epoch = 100
 logger = Logger(opt.n_epochs, iterations_per_epoch)
 
 lr = opt.lr
-
+ii = 0
 ###### Training ######
 for epoch in range(opt.epoch, opt.n_epochs):
 
@@ -109,33 +119,30 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
             print("Current scale: {}, batch size: {}".format(current_scale, batch_size))
             # Dataset loader
-            transforms_ = [ transforms.Resize(int(current_scale*1.12), Image.BICUBIC),
+            transforms_ = [
+                            transforms.Resize(int(current_scale*1.12), Image.BICUBIC),
                             transforms.RandomCrop(current_scale),
+                            GuidedFilter(),
                             transforms.RandomHorizontalFlip(),
                             transforms.ToTensor(),
                             transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
 
-            #dataset = ImageDataset(opt.dataroot, transforms_=transforms_, unaligned=True)
-            dataset = CelebA("/home/msu/Data/celeba", transforms_=transforms_, unaligned=True, attribute = "Eyeglasses")
+            dataset = ImageDataset(opt.dataroot, transforms_=transforms_, unaligned=True)
+            #dataset = CelebA("/home/msu/Data/celeba", transforms_=transforms_, unaligned=True, attribute = "Young")
 
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                                     num_workers=opt.n_cpu,drop_last=True)
-            input_A = Tensor(batch_size, opt.input_nc, current_scale, current_scale)
-            input_B = Tensor(batch_size, opt.output_nc, current_scale, current_scale)
+            input_A = Tensor(batch_size, 3, current_scale, current_scale)
+            input_B = Tensor(batch_size, 3, current_scale, current_scale)
 
             _ones = Tensor(batch_size).fill_(1.0)
             _half = Tensor(batch_size).fill_(0.5)
-            _zeros = Tensor(batch_size).fill_(0.0)
+            _zeros = Tensor(batch_size).fill_(0)
 
-            target_A_real = Variable(_ones,requires_grad=False)
+            target_A_real = Variable(_zeros,requires_grad=False)
             target_A_fake = Variable(_half,requires_grad=False)
             target_B_fake = Variable(_half,requires_grad=False)
-            target_B_real = Variable(_zeros,requires_grad=False)
-
-            #target_A_fake = Variable(torch.stack([_zeros,_zeros],dim=1),requires_grad=False)
-            #target_A_real = Variable(torch.stack([_ones,_zeros],dim=1),requires_grad=False)
-            #target_B_fake = Variable(torch.stack([_zeros,_ones],dim=1),requires_grad=False)
-            #target_B_real = Variable(torch.stack([_ones,_ones],dim=1),requires_grad=False)
+            target_B_real = Variable(_ones,requires_grad=False)
 
             fake_A_buffer = ReplayBuffer()
             fake_B_buffer = ReplayBuffer()
@@ -158,6 +165,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
 
         # Identity loss
         # G_A2B(B) should equal B if real B is fed
+
 
         same_B = netG_A2B(real_B)
         loss_identity_B = criterion_identity(same_B, real_B)*5.0
@@ -195,6 +203,10 @@ for epoch in range(opt.epoch, opt.n_epochs):
         ###### Discriminator A ######
         optimizer_D.zero_grad()
 
+        real_A_pyr = make_pyramid(real_A)
+        real_B_pyr = make_pyramid(real_B)
+
+        #import pdb; pdb.set_trace()
         # Real loss
         pred_real_A = netD(real_A)
         loss_D_real_A = criterion_GAN(pred_real_A, target_A_real)
@@ -202,6 +214,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # Fake loss
         fake_A = fake_A_buffer.push_and_pop(fake_A)
         pred_fake_A = netD(fake_A.detach())
+        pred_fake_A = netD(fake_A)
         loss_D_fake_A = criterion_GAN(pred_fake_A, target_A_fake)
 
         # Real loss
@@ -211,10 +224,12 @@ for epoch in range(opt.epoch, opt.n_epochs):
         # Fake loss
         fake_B = fake_B_buffer.push_and_pop(fake_B)
         pred_fake_B = netD(fake_B.detach())
-        loss_D_fake_B = criterion_GAN(pred_fake_B, target_A_fake)
+        pred_fake_B = netD(fake_B)
+        loss_D_fake_B = criterion_GAN(pred_fake_B, target_B_fake)
 
         # Total loss
         loss_D = (loss_D_real_A + loss_D_fake_A + loss_D_real_B + loss_D_fake_B)*0.25
+
         loss_D.backward()
 
         optimizer_D.step()
@@ -225,22 +240,21 @@ for epoch in range(opt.epoch, opt.n_epochs):
                     'loss_G_cycle': (loss_cycle_ABA + loss_cycle_BAB), 'loss_D': loss_D},
                     images={'real_A': real_A, 'real_B': real_B, 'fake_A': fake_A, 'fake_B': fake_B})
 
-        if i % 100 == 0:
-            # Save models checkpoints
+
+        #print("wgy", i, iterations_per_epoch)
+        if (ii+1) % 20 == 0:
+            print("EPOCH FINISH =======================================")
             print("save checkpoint")
             torch.save(netG_A2B, 'output/netG_A2B.pth')
             torch.save(netG_B2A, 'output/netG_B2A.pth')
             torch.save(netD, 'output/netD.pth')
-
-
-            #print(prof)
-            # Update learning rates
-            #lr_scheduler_G.step()
-            #lr_scheduler_D.step()
-
-        if (i+1) % iterations_per_epoch == 0:
-            print("EPOCH FINISH =======================================")
-            break
+            #import pdb; pdb.set_trace()
+            plt.imsave("log/epoch_{}_A_real.png".format(epoch), np.moveaxis(tensor2image(real_A.data),0,2))
+            plt.imsave("log/epoch_{}_B_real.png".format(epoch), np.moveaxis(tensor2image(real_B.data),0,2))
+            plt.imsave("log/epoch_{}_A_fake.png".format(epoch), np.moveaxis(tensor2image(fake_A.data),0,2))
+            plt.imsave("log/epoch_{}_B_fake.png".format(epoch), np.moveaxis(tensor2image(fake_B.data),0,2))
+        ii += 1
+        #break
 
 
 

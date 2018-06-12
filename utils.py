@@ -10,6 +10,21 @@ import numpy as np
 import cv2
 from PIL import Image
 
+from contextlib import contextmanager
+import traceback
+
+@contextmanager
+def ignore_exceptions(*exceptions, debug=True):
+  if debug:
+      yield
+      pass
+  else:
+      try:
+        yield
+      except exceptions:
+        traceback.print_exc()
+        pass
+
 class GuidedFilter(object):
     def __init__(self, r=5, eps=0.05, p = None):
         self.r = r

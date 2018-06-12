@@ -32,7 +32,8 @@ class ImageDataset(Dataset):
 
 class InverseTransformImageDataset(Dataset):
 
-    def __init__(self, root, transforms_=None, target_transforms_=None):
+    def __init__(self, root, pre_transforms_=None, transforms_=None, target_transforms_=None):
+        self.pre_transform = transforms.Compose(pre_transforms_) # common for both image and target
         self.transform = transforms.Compose(transforms_)
         self.target_transform = transforms.Compose(target_transforms_)
 
@@ -44,9 +45,15 @@ class InverseTransformImageDataset(Dataset):
 
 
     def __getitem__(self, index):
+
         im = Image.open(self.files[index % len(self.files)])
+        im.load()
+        im = self.pre_transform(im)
+        print(im.shape)
         image = self.transform(im)
+        print(image.shape)
         target = self.target_transform(im)
+        print(target.shape)
 
 
         return {'image': image, 'target': target}
