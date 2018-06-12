@@ -102,13 +102,15 @@ for epoch in range(opt.epoch, opt.n_epochs):
             pre_transforms_ = [
                             transforms.Resize(int(current_scale*1.12), Image.BICUBIC),
                             transforms.RandomCrop(current_scale),
-                            transforms.ToTensor()
+                            transforms.RandomHorizontalFlip(),
                             ]
             transforms_ = [
+                            transforms.ToTensor(),
                             forward_transform,
                             transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
 
             target_transforms_ = [
+                            transforms.ToTensor(),
                             transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
 
             dataset = InverseTransformImageDataset("datasets/rome/train/B", pre_transforms_=pre_transforms_, transforms_=transforms_, target_transforms_=target_transforms_)

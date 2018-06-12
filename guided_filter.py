@@ -91,7 +91,6 @@ class GuidedFilterTransfrom(object):
 
         if num_dim == 3:
             filtered.squeeze_(0)
-
         return filtered
 
 class GuidedFilter(nn.Module):

@@ -49,11 +49,11 @@ class InverseTransformImageDataset(Dataset):
         im = Image.open(self.files[index % len(self.files)])
         im.load()
         im = self.pre_transform(im)
-        print(im.shape)
+
         image = self.transform(im)
-        print(image.shape)
+
         target = self.target_transform(im)
-        print(target.shape)
+
 
 
         return {'image': image, 'target': target}

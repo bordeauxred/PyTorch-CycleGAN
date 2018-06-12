@@ -105,7 +105,15 @@ class PyramidDiscriminator(nn.Module):
                     nn.InstanceNorm2d(128),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
+        model += [  nn.Conv2d(128, 128, 4, stride=1, padding=1),
+                    nn.InstanceNorm2d(256),
+                    nn.LeakyReLU(0.2, inplace=True) ]
+
         model += [  nn.Conv2d(128, 256, 4, stride=2, padding=1),
+                    nn.InstanceNorm2d(256),
+                    nn.LeakyReLU(0.2, inplace=True) ]
+
+        model += [  nn.Conv2d(256, 256, 4, stride=1, padding=1),
                     nn.InstanceNorm2d(256),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
