@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from time import time
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_output, nf = 128):
+    def __init__(self, n_channels, n_output, nf = 32):
         super(UNet, self).__init__()
         self.inc = inconv(n_channels, nf)
         self.down1 = down(nf, nf*2)
@@ -112,13 +112,14 @@ class double_conv(nn.Module):
 
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch, out_ch//4, 1, padding=0, bias=False), #squeeze
-
             nn.Conv2d(out_ch//4, out_ch//4, 3, padding=1),
-            nn.BatchNorm2d(out_ch//4),
-            nn.ReLU(inplace=True),
+            nn.InstanceNorm2d(out_ch//4),
+            nn.ELU(inplace=True),
+            nn.Dropout(p=0.2),
             nn.Conv2d(out_ch//4, out_ch//4, 3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch//4),
-            nn.ReLU(inplace=True),
+            nn.InstanceNorm2d(out_ch//4),
+            nn.ELU(inplace=True),
+            nn.Dropout(p=0.2),
             nn.Conv2d(out_ch//4, out_ch, 1, padding=0, bias=False) #expand
         )
 
