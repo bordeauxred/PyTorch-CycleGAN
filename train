@@ -25,7 +25,7 @@ from time import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epoch', type=int, default=0, help='starting epoch')
-parser.add_argument('--n_epochs', type=int, default=200, help='number of epochs of training')
+parser.add_argument('--n_epochs', type=int, default=2000, help='number of epochs of training')
 parser.add_argument('--batchSize', type=int, default=1, help='size of the batches')
 parser.add_argument('--dataroot', type=str, default='datasets/horse2zebra/', help='root directory of the dataset')
 parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate')
@@ -44,8 +44,8 @@ if torch.cuda.is_available() and not opt.cuda:
 
 ###### Definition of variables ######
 # Networks
-netG_A2B = Generator(opt.input_nc, opt.output_nc)
-netG_B2A = Generator(opt.output_nc, opt.input_nc)
+netG_A2B = Generator(opt.input_nc, opt.output_nc, nf = 64)
+netG_B2A = Generator(opt.output_nc, opt.input_nc, nf = 64)
 netD = Discriminator(opt.input_nc)
 
 if opt.resume:
@@ -99,9 +99,9 @@ def make_pyramid(x, num_levels=4):
 # epoch, size, batch_size
 
 current_scale = 32
-max_scale = 256
+max_scale = 128
 max_scale_batch_size = 4
-epochs_per_scale = 2
+epochs_per_scale = 10
 
 iterations_per_epoch = 100
 # Loss plot
@@ -122,27 +122,32 @@ for epoch in range(opt.epoch, opt.n_epochs):
             transforms_ = [
                             transforms.Resize(int(current_scale*1.12), Image.BICUBIC),
                             transforms.RandomCrop(current_scale),
-                            GuidedFilter(),
+                            #GuidedFilter(),
                             transforms.RandomHorizontalFlip(),
                             transforms.ToTensor(),
                             transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5)) ]
 
-            dataset = ImageDataset(opt.dataroot, transforms_=transforms_, unaligned=True)
-            #dataset = CelebA("/home/msu/Data/celeba", transforms_=transforms_, unaligned=True, attribute = "Young")
+            #dataset = ImageDataset(opt.dataroot, transforms_=transforms_, unaligned=True)
+            dataset = CelebA("/home/msu/Data/celeba", transforms_=transforms_, unaligned=True, attribute = "Male")
 
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                                     num_workers=opt.n_cpu,drop_last=True)
-            input_A = Tensor(batch_size, 3, current_scale, current_scale)
-            input_B = Tensor(batch_size, 3, current_scale, current_scale)
+            input_A = Tensor(batch_size, opt.input_nc, current_scale, current_scale)
+            input_B = Tensor(batch_size, opt.output_nc, current_scale, current_scale)
 
             _ones = Tensor(batch_size).fill_(1.0)
-            _half = Tensor(batch_size).fill_(0.5)
-            _zeros = Tensor(batch_size).fill_(0)
+            _half = Tensor(batch_size).fill_(0.0)
+            _zeros = Tensor(batch_size).fill_(-1.0)
 
-            target_A_real = Variable(_zeros,requires_grad=False)
+            target_A_real = Variable(_ones,requires_grad=False)
             target_A_fake = Variable(_half,requires_grad=False)
             target_B_fake = Variable(_half,requires_grad=False)
-            target_B_real = Variable(_ones,requires_grad=False)
+            target_B_real = Variable(_zeros,requires_grad=False)
+            #import pdb; pdb.set_trace()
+            #target_A_real = Variable(torch.stack([_ones,_zeros],dim=1),requires_grad=False)
+            #target_A_fake = Variable(torch.stack([_half,_ones]),requires_grad=False)
+            #target_B_fake = Variable(torch.stack([_half,_ones]),requires_grad=False)
+            #target_B_real = Variable(torch.stack([_zeros,_zeros],dim=1),requires_grad=False)
 
             fake_A_buffer = ReplayBuffer()
             fake_B_buffer = ReplayBuffer()
@@ -240,9 +245,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
                     'loss_G_cycle': (loss_cycle_ABA + loss_cycle_BAB), 'loss_D': loss_D},
                     images={'real_A': real_A, 'real_B': real_B, 'fake_A': fake_A, 'fake_B': fake_B})
 
-
-        #print("wgy", i, iterations_per_epoch)
-        if (ii+1) % 20 == 0:
+        if i > iterations_per_epoch:
             print("EPOCH FINISH =======================================")
             print("save checkpoint")
             torch.save(netG_A2B, 'output/netG_A2B.pth')
@@ -253,8 +256,7 @@ for epoch in range(opt.epoch, opt.n_epochs):
             plt.imsave("log/epoch_{}_B_real.png".format(epoch), np.moveaxis(tensor2image(real_B.data),0,2))
             plt.imsave("log/epoch_{}_A_fake.png".format(epoch), np.moveaxis(tensor2image(fake_A.data),0,2))
             plt.imsave("log/epoch_{}_B_fake.png".format(epoch), np.moveaxis(tensor2image(fake_B.data),0,2))
-        ii += 1
-        #break
+            break
 
 
 
